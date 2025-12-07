@@ -1,0 +1,118 @@
+---
+# Alternative SQL Server Installation using Bootstrap Installer
+# Use this if you don't have the ISO and only have SQL2025-SSEI-EntDev.exe
+
+- name: Install SQL Server using Bootstrap Installer
+  hosts: sql_servers
+  gather_facts: no
+
+  vars:
+    sql_installer_url: "https://download.microsoft.com/download/5/1/4/5145fe04-4d30-4b85-b0d1-39533663a2f1/SQL2025-SSEI-Dev.exe"
+    sql_install_path: "C:\\Program Files\\Microsoft SQL Server"
+    sql_data_path: "C:\\SQLData"
+    sql_log_path: "C:\\SQLLogs"
+    sql_backup_path: "C:\\SQLBackup"
+
+  tasks:
+    - name: Check if SQL Server is already installed
+      win_service:
+        name: MSSQLSERVER
+      register: sql_service
+      ignore_errors: yes
+
+    - name: Create SQL Server installation directory
+      win_file:
+        path: C:\SQLInstall
+        state: directory
+      when: sql_service is failed
+
+    - name: Download SQL Server bootstrap installer
+      win_get_url:
+        url: "{{ sql_installer_url }}"
+        dest: C:\SQLInstall\SQL2025-SSEI-Dev.exe
+      when: sql_service is failed
+
+    - name: Create SQL Server configuration file
+      win_copy:
+        content: |
+          [OPTIONS]
+          ACTION="Install"
+          FEATURES=SQLENGINE
+          INSTANCENAME="MSSQLSERVER"
+          INSTANCEID="MSSQLSERVER"
+
+          ; Service Accounts
+          SQLSVCACCOUNT="{{ domain_netbios_name }}\{{ sql_service_account }}"
+          SQLSVCPASSWORD="{{ sql_service_password }}"
+          AGTSVCACCOUNT="{{ domain_netbios_name }}\{{ sql_agent_account }}"
+          AGTSVCPASSWORD="{{ sql_agent_password }}"
+
+          ; Startup Type
+          SQLSVCSTARTUPTYPE="Automatic"
+          AGTSVCSTARTUPTYPE="Automatic"
+
+          ; Directories
+          INSTALLSQLDATADIR="{{ sql_data_path }}"
+          SQLUSERDBDIR="{{ sql_data_path }}"
+          SQLUSERDBLOGDIR="{{ sql_log_path }}"
+          SQLBACKUPDIR="{{ sql_backup_path }}"
+
+          ; Authentication
+          SECURITYMODE="SQL"
+          SAPWD="{{ sql_sa_password }}"
+
+          ; Administrators
+          SQLSYSADMINACCOUNTS="{{ domain_netbios_name }}\SQL Admins" "{{ domain_netbios_name }}\{{ domain_admin_user }}"
+
+          ; Always On
+          SQLSVCINSTANTFILEINIT="True"
+
+          ; Misc
+          IACCEPTSQLSERVERLICENSETERMS="True"
+          SUPPRESSPRIVACYSTATEMENTNOTICE="True"
+          TCPENABLED="1"
+          NPENABLED="1"
+          BROWSERSVCSTARTUPTYPE="Automatic"
+
+          ; Quiet install
+          QUIET="True"
+          QUIETSIMPLE="False"
+        dest: C:\SQLInstall\ConfigurationFile.ini
+      when: sql_service is failed
+
+    - name: Run SQL Server bootstrap installer to download and install
+      win_shell: |
+        # Use the bootstrap installer to download and install SQL Server
+        C:\SQLInstall\SQL2025-SSEI-Dev.exe /Action=Install /ConfigurationFile=C:\SQLInstall\ConfigurationFile.ini /IAcceptSQLServerLicenseTerms /Quiet
+      when: sql_service is failed
+      async: 3600
+      poll: 30
+      register: sql_install
+
+    - name: Enable Always On Availability Groups
+      win_shell: |
+        Import-Module SQLPS -DisableNameChecking
+        Enable-SqlAlwaysOn -ServerInstance {{ inventory_hostname }} -Force
+      register: enable_alwayson
+
+    - name: Restart SQL Server service
+      win_service:
+        name: MSSQLSERVER
+        state: restarted
+      when: enable_alwayson is changed
+
+    - name: Wait for SQL Server to be ready
+      win_wait_for:
+        port: 1433
+        timeout: 300
+
+    - name: Display SQL Server installation status
+      debug:
+        msg: |
+          SQL Server Installation Complete: {{ inventory_hostname }}
+          Instance: MSSQLSERVER
+          Version: SQL Server 2025 Developer Edition
+          Service Account: {{ domain_netbios_name }}\{{ sql_service_account }}
+          Always On: Enabled
+          Port: 1433
+          Installation Method: Bootstrap Installer (No ISO required)

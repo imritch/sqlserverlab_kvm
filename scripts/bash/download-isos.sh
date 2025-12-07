@@ -42,27 +42,59 @@ echo "SQL Server 2025 Developer Edition"
 echo "----------------------------------"
 echo "Download from: https://www.microsoft.com/en-us/sql-server/sql-server-downloads"
 echo ""
-echo "Note: SQL Server 2025 is the latest version."
-echo "Download the evaluation installer, then use 'Download Media' option to get the ISO."
+echo "IMPORTANT: SQL Server 2025 download process has changed!"
 echo ""
-echo "Manual steps:"
-echo "  1. Visit https://www.microsoft.com/en-us/sql-server/sql-server-downloads"
-echo "  2. Download SQL Server 2025 Developer Edition"
-echo "  3. Run the installer and choose 'Download Media'"
-echo "  4. Select 'ISO' format and download location"
-echo "  5. Save the ISO as: $ISO_DIR/SQLServer2025-DEV-x64-ENU.iso"
+echo "Microsoft now provides a bootstrap installer (SQL2025-SSEI-EntDev.exe)"
+echo "instead of a direct ISO download."
 echo ""
-echo "Expected filename: SQLServer2025-DEV-x64-ENU.iso"
+echo "You have TWO OPTIONS:"
 echo ""
-read -p "Press Enter when you have downloaded SQL Server 2025 ISO..."
+echo "OPTION 1 - Extract ISO using Wine (Recommended for Ubuntu):"
+echo "  Run: ./scripts/bash/extract-sql-iso.sh"
+echo "  This will use Wine to run the Windows installer and download the ISO"
+echo ""
+echo "OPTION 2 - Use Bootstrap Installer (No ISO needed):"
+echo "  Download SQL2025-SSEI-EntDev.exe to isos/"
+echo "  The Ansible playbook will handle installation directly"
+echo "  Use: ansible/playbooks/05-install-sql-server-bootstrap.yml"
+echo ""
+echo "OPTION 3 - Manual extraction (if you have Windows access):"
+echo "  1. Download SQL2025-SSEI-EntDev.exe on a Windows machine"
+echo "  2. Run it and choose 'Download Media'"
+echo "  3. Select 'ISO' format"
+echo "  4. Transfer the ISO to: $ISO_DIR/SQLServer2025-DEV-x64-ENU.iso"
+echo ""
+read -p "Which option will you use? [1/2/3]: " sql_option
 
-# Verify SQL Server ISO
+case $sql_option in
+    1)
+        echo "Run: ./scripts/bash/extract-sql-iso.sh"
+        ;;
+    2)
+        echo "Make sure SQL2025-SSEI-EntDev.exe is in $ISO_DIR/"
+        echo "Then use the bootstrap playbook during installation"
+        ;;
+    3)
+        echo "Transfer the ISO when ready"
+        ;;
+    *)
+        echo "No option selected. You can run this script again later."
+        ;;
+esac
+
+# Verify SQL Server ISO or bootstrap
 if [ -f "$ISO_DIR/SQLServer2025-DEV-x64-ENU.iso" ]; then
     echo "✓ Found SQL Server 2025 ISO"
     ls -lh "$ISO_DIR/SQLServer2025-DEV-x64-ENU.iso"
+elif [ -f "$ISO_DIR/SQL2025-SSEI-EntDev.exe" ]; then
+    echo "✓ Found SQL Server 2025 Bootstrap Installer"
+    ls -lh "$ISO_DIR/SQL2025-SSEI-EntDev.exe"
+    echo "  You'll use the bootstrap installation method"
 else
-    echo "✗ SQL Server 2025 ISO not found at: $ISO_DIR/SQLServer2025-DEV-x64-ENU.iso"
-    echo "  Please ensure the file is named exactly: SQLServer2025-DEV-x64-ENU.iso"
+    echo "✗ SQL Server 2025 media not found"
+    echo "  Looking for either:"
+    echo "    - $ISO_DIR/SQLServer2025-DEV-x64-ENU.iso (ISO method)"
+    echo "    - $ISO_DIR/SQL2025-SSEI-EntDev.exe (Bootstrap method)"
 fi
 
 echo ""
