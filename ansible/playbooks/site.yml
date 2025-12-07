@@ -1,0 +1,59 @@
+---
+# Main playbook for SQL Server Lab deployment
+# This orchestrates the entire lab setup
+
+- name: Deploy SQL Server Lab Environment
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Display deployment plan
+      debug:
+        msg: |
+          SQL Server Lab Deployment Plan:
+          ================================
+          1. Configure Active Directory Domain Controller (dc01)
+          2. Create domain users and service accounts
+          3. Configure SQL Server nodes (sql01, sql02, sql03)
+          4. Create Windows Failover Cluster
+          5. Install SQL Server on all nodes
+          6. Configure Always On Availability Groups
+          7. Configure Kerberos authentication
+          8. Deploy Java application server
+
+          This will take approximately 60-90 minutes.
+
+# Phase 1: Active Directory Setup
+- name: Phase 1 - Configure Domain Controller
+  import_playbook: 01-setup-domain-controller.yml
+
+# Phase 2: Domain Configuration
+- name: Phase 2 - Configure Active Directory
+  import_playbook: 02-configure-active-directory.yml
+
+# Phase 3: Prepare SQL Server Nodes
+- name: Phase 3 - Prepare SQL Server Nodes
+  import_playbook: 03-prepare-sql-nodes.yml
+
+# Phase 4: Windows Failover Cluster
+- name: Phase 4 - Create Windows Failover Cluster
+  import_playbook: 04-create-failover-cluster.yml
+
+# Phase 5: SQL Server Installation
+- name: Phase 5 - Install SQL Server
+  import_playbook: 05-install-sql-server.yml
+
+# Phase 6: Always On Availability Groups
+- name: Phase 6 - Configure Always On AG
+  import_playbook: 06-configure-always-on.yml
+
+# Phase 7: Kerberos Configuration
+- name: Phase 7 - Configure Kerberos
+  import_playbook: 07-configure-kerberos.yml
+
+# Phase 8: Application Server
+- name: Phase 8 - Deploy Application Server
+  import_playbook: 08-deploy-app-server.yml
+
+# Phase 9: Verification
+- name: Phase 9 - Verify Deployment
+  import_playbook: 09-verify-deployment.yml

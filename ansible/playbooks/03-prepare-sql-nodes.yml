@@ -1,0 +1,97 @@
+---
+- name: Prepare SQL Server Nodes
+  hosts: sql_servers
+  gather_facts: yes
+
+  tasks:
+    - name: Set DNS to point to Domain Controller
+      win_dns_client:
+        adapter_names: '*'
+        dns_servers:
+          - 192.168.100.10
+
+    - name: Join domain
+      win_domain_membership:
+        dns_domain_name: "{{ domain_name }}"
+        domain_admin_user: "{{ domain_admin_user }}@{{ domain_name }}"
+        domain_admin_password: "{{ domain_admin_password }}"
+        state: domain
+      register: domain_join
+
+    - name: Reboot after domain join
+      win_reboot:
+        reboot_timeout: 600
+      when: domain_join.reboot_required
+
+    - name: Wait for system to be ready
+      wait_for_connection:
+        timeout: 300
+        delay: 10
+
+    - name: Install Failover Clustering feature
+      win_feature:
+        name: Failover-Clustering
+        include_management_tools: yes
+        include_sub_features: yes
+        state: present
+      register: cluster_feature
+
+    - name: Reboot if required after Failover Clustering
+      win_reboot:
+        reboot_timeout: 600
+      when: cluster_feature.reboot_required
+
+    - name: Install .NET Framework 4.8
+      win_feature:
+        name: NET-Framework-45-Core
+        state: present
+
+    - name: Create SQL Server installation directory
+      win_file:
+        path: C:\SQLInstall
+        state: directory
+
+    - name: Create SQL Server data directory
+      win_file:
+        path: C:\SQLData
+        state: directory
+
+    - name: Create SQL Server log directory
+      win_file:
+        path: C:\SQLLogs
+        state: directory
+
+    - name: Create SQL Server backup directory
+      win_file:
+        path: C:\SQLBackup
+        state: directory
+
+    - name: Open SQL Server firewall ports
+      win_firewall_rule:
+        name: "{{ item.name }}"
+        localport: "{{ item.port }}"
+        action: allow
+        direction: in
+        protocol: tcp
+        state: present
+        enabled: yes
+      loop:
+        - { name: 'SQL Server', port: '1433' }
+        - { name: 'SQL Server Browser', port: '1434' }
+        - { name: 'SQL AG Endpoint', port: '5022' }
+        - { name: 'SQL Admin Connection', port: '1434' }
+
+    - name: Add domain SQL Admins group to local Administrators
+      win_group_membership:
+        name: Administrators
+        members:
+          - "{{ domain_netbios_name }}\\SQL Admins"
+        state: present
+
+    - name: Display SQL node preparation status
+      debug:
+        msg: |
+          SQL Node Preparation Complete: {{ inventory_hostname }}
+          Domain: {{ domain_name }}
+          Features Installed: Failover Clustering, .NET Framework
+          Directories Created: C:\SQLData, C:\SQLLogs, C:\SQLBackup

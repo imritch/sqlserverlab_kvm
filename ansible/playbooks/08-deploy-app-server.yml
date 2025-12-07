@@ -1,0 +1,223 @@
+---
+- name: Deploy Java Application Server
+  hosts: application_servers
+  gather_facts: yes
+  become: yes
+
+  vars:
+    java_version: "17"
+    app_dir: /opt/sqlapp
+    krb5_conf_path: /etc/krb5.conf
+
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install OpenJDK
+      apt:
+        name: "openjdk-{{ java_version }}-jdk"
+        state: present
+
+    - name: Install Kerberos client
+      apt:
+        name:
+          - krb5-user
+          - krb5-config
+        state: present
+
+    - name: Configure Kerberos client (krb5.conf)
+      copy:
+        content: |
+          [libdefaults]
+              default_realm = {{ domain_name | upper }}
+              dns_lookup_realm = true
+              dns_lookup_kdc = true
+              ticket_lifetime = 24h
+              renew_lifetime = 7d
+              forwardable = true
+              rdns = false
+              default_ccache_name = FILE:/tmp/krb5cc_%{uid}
+
+          [realms]
+              {{ domain_name | upper }} = {
+                  kdc = dc01.{{ domain_name }}
+                  admin_server = dc01.{{ domain_name }}
+                  default_domain = {{ domain_name }}
+              }
+
+          [domain_realm]
+              .{{ domain_name }} = {{ domain_name | upper }}
+              {{ domain_name }} = {{ domain_name | upper }}
+
+          [logging]
+              default = FILE:/var/log/krb5libs.log
+              kdc = FILE:/var/log/krb5kdc.log
+              admin_server = FILE:/var/log/kadmind.log
+        dest: "{{ krb5_conf_path }}"
+        mode: '0644'
+
+    - name: Create application directory
+      file:
+        path: "{{ app_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Create Java Kerberos configuration
+      copy:
+        content: |
+          useTicketCache=true
+          useKeyTab=false
+          principal={{ domain_netbios_name }}\\appuser@{{ domain_name | upper }}
+          doNotPrompt=true
+          renewTGT=true
+          isInitiator=true
+        dest: "{{ app_dir }}/jaas.conf"
+        mode: '0644'
+
+    - name: Download Microsoft JDBC Driver for SQL Server
+      get_url:
+        url: https://go.microsoft.com/fwlink/?linkid=2225478
+        dest: /tmp/mssql-jdbc.tar.gz
+        mode: '0644'
+      register: jdbc_download
+      ignore_errors: yes
+
+    - name: Extract JDBC driver (if downloaded)
+      unarchive:
+        src: /tmp/mssql-jdbc.tar.gz
+        dest: "{{ app_dir }}"
+        remote_src: yes
+      when: jdbc_download is succeeded
+
+    - name: Create sample Java application
+      copy:
+        content: |
+          import java.sql.*;
+
+          public class SQLServerKerberosTest {
+              public static void main(String[] args) {
+                  // Set Kerberos configuration
+                  System.setProperty("java.security.krb5.conf", "/etc/krb5.conf");
+                  System.setProperty("java.security.auth.login.config", "{{ app_dir }}/jaas.conf");
+                  System.setProperty("javax.security.auth.useSubjectCredsOnly", "false");
+
+                  String connectionUrl = "jdbc:sqlserver://{{ ag_listener_name }}.{{ domain_name }}:{{ ag_listener_port }};" +
+                                       "databaseName=TestDB;" +
+                                       "integratedSecurity=true;" +
+                                       "authenticationScheme=JavaKerberos;" +
+                                       "trustServerCertificate=true;";
+
+                  System.out.println("Attempting to connect to SQL Server...");
+                  System.out.println("Connection URL: " + connectionUrl);
+                  System.out.println("Kerberos Realm: {{ domain_name | upper }}");
+                  System.out.println("KDC: dc01.{{ domain_name }}");
+                  System.out.println("");
+
+                  try (Connection connection = DriverManager.getConnection(connectionUrl)) {
+                      System.out.println("Successfully connected to SQL Server using Kerberos!");
+
+                      // Test query
+                      String query = "SELECT @@VERSION AS SQLVersion, " +
+                                   "SUSER_SNAME() AS AuthenticatedUser, " +
+                                   "auth_scheme FROM sys.dm_exec_connections WHERE session_id = @@SPID";
+
+                      try (Statement statement = connection.createStatement();
+                           ResultSet resultSet = statement.executeQuery(query)) {
+
+                          while (resultSet.next()) {
+                              System.out.println("\nConnection Details:");
+                              System.out.println("==================");
+                              System.out.println("SQL Version: " + resultSet.getString("SQLVersion").split("\n")[0]);
+                              System.out.println("Authenticated User: " + resultSet.getString("AuthenticatedUser"));
+                              System.out.println("Authentication Scheme: " + resultSet.getString("auth_scheme"));
+                          }
+                      }
+
+                      // Test AG query
+                      String agQuery = "SELECT AG.name AS AGName, " +
+                                      "AR.replica_server_name AS Replica, " +
+                                      "ARS.role_desc AS Role " +
+                                      "FROM sys.availability_groups AG " +
+                                      "JOIN sys.availability_replicas AR ON AG.group_id = AR.group_id " +
+                                      "JOIN sys.dm_hadr_availability_replica_states ARS ON AR.replica_id = ARS.replica_id " +
+                                      "WHERE ARS.is_local = 1";
+
+                      try (Statement statement = connection.createStatement();
+                           ResultSet resultSet = statement.executeQuery(agQuery)) {
+
+                          System.out.println("\nAvailability Group Info:");
+                          System.out.println("========================");
+                          while (resultSet.next()) {
+                              System.out.println("AG Name: " + resultSet.getString("AGName"));
+                              System.out.println("Connected to Replica: " + resultSet.getString("Replica"));
+                              System.out.println("Replica Role: " + resultSet.getString("Role"));
+                          }
+                      }
+
+                  } catch (SQLException e) {
+                      System.err.println("Connection failed!");
+                      System.err.println("Error: " + e.getMessage());
+                      e.printStackTrace();
+                      System.exit(1);
+                  }
+              }
+          }
+        dest: "{{ app_dir }}/SQLServerKerberosTest.java"
+        mode: '0644'
+
+    - name: Create run script
+      copy:
+        content: |
+          #!/bin/bash
+          set -e
+
+          APP_DIR="{{ app_dir }}"
+          JDBC_JAR=$(find $APP_DIR -name "mssql-jdbc-*.jdk17.jar" | head -n1)
+
+          if [ -z "$JDBC_JAR" ]; then
+              echo "JDBC driver not found. Please download it manually:"
+              echo "https://learn.microsoft.com/en-us/sql/connect/jdbc/download-microsoft-jdbc-driver-for-sql-server"
+              echo "Extract and place the .jar file in $APP_DIR"
+              exit 1
+          fi
+
+          echo "Compiling Java application..."
+          javac -cp "$JDBC_JAR" "$APP_DIR/SQLServerKerberosTest.java"
+
+          echo "Running application..."
+          java -cp "$APP_DIR:$JDBC_JAR" \
+               -Djava.security.krb5.conf=/etc/krb5.conf \
+               -Djava.security.auth.login.config=$APP_DIR/jaas.conf \
+               -Djavax.security.auth.useSubjectCredsOnly=false \
+               -Dsun.security.krb5.debug=true \
+               SQLServerKerberosTest
+        dest: "{{ app_dir }}/run.sh"
+        mode: '0755'
+
+    - name: Display application setup summary
+      debug:
+        msg: |
+          Java Application Server Setup Complete!
+          ========================================
+          Java Version: {{ java_version }}
+          Application Directory: {{ app_dir }}
+          Kerberos Realm: {{ domain_name | upper }}
+          KDC: dc01.{{ domain_name }}
+
+          SQL Server Connection:
+            Listener: {{ ag_listener_name }}.{{ domain_name }}:{{ ag_listener_port }}
+            Database: TestDB
+            Authentication: Kerberos (Integrated Security)
+
+          To test the connection:
+            1. Join this server to the domain OR create a keytab file
+            2. Obtain Kerberos ticket: kinit appuser@{{ domain_name | upper }}
+            3. Run: {{ app_dir }}/run.sh
+
+          Files created:
+            - {{ app_dir }}/SQLServerKerberosTest.java (Sample app)
+            - {{ app_dir }}/jaas.conf (Java Kerberos config)
+            - {{ app_dir }}/run.sh (Run script)
+            - /etc/krb5.conf (Kerberos client config)

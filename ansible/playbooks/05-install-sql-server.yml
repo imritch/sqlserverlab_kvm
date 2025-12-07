@@ -1,0 +1,140 @@
+---
+- name: Install SQL Server on all nodes
+  hosts: sql_servers
+  gather_facts: no
+
+  vars:
+    sql_iso_path: "D:\\"  # Will be mounted ISO
+    sql_install_path: "C:\\Program Files\\Microsoft SQL Server"
+    sql_data_path: "C:\\SQLData"
+    sql_log_path: "C:\\SQLLogs"
+    sql_backup_path: "C:\\SQLBackup"
+
+  tasks:
+    - name: Check if SQL Server is already installed
+      win_service:
+        name: MSSQLSERVER
+      register: sql_service
+      ignore_errors: yes
+
+    - name: Create SQL Server configuration file
+      win_copy:
+        content: |
+          [OPTIONS]
+          ACTION="Install"
+          FEATURES=SQLENGINE
+          INSTANCENAME="MSSQLSERVER"
+          INSTANCEID="MSSQLSERVER"
+
+          ; Service Accounts
+          SQLSVCACCOUNT="{{ domain_netbios_name }}\{{ sql_service_account }}"
+          SQLSVCPASSWORD="{{ sql_service_password }}"
+          AGTSVCACCOUNT="{{ domain_netbios_name }}\{{ sql_agent_account }}"
+          AGTSVCPASSWORD="{{ sql_agent_password }}"
+
+          ; Startup Type
+          SQLSVCSTARTUPTYPE="Automatic"
+          AGTSVCSTARTUPTYPE="Automatic"
+
+          ; Directories
+          INSTALLSQLDATADIR="{{ sql_data_path }}"
+          SQLUSERDBDIR="{{ sql_data_path }}"
+          SQLUSERDBLOGDIR="{{ sql_log_path }}"
+          SQLBACKUPDIR="{{ sql_backup_path }}"
+
+          ; Authentication
+          SECURITYMODE="SQL"
+          SAPWD="{{ sql_sa_password }}"
+
+          ; Administrators
+          SQLSYSADMINACCOUNTS="{{ domain_netbios_name }}\SQL Admins" "{{ domain_netbios_name }}\{{ domain_admin_user }}"
+
+          ; Always On
+          SQLSVCINSTANTFILEINIT="True"
+
+          ; Misc
+          IACCEPTSQLSERVERLICENSETERMS="True"
+          SUPPRESSPRIVACYSTATEMENTNOTICE="True"
+          TCPENABLED="1"
+          NPENABLED="1"
+          BROWSERSVCSTARTUPTYPE="Automatic"
+
+          ; Always On Availability Groups
+          FAILOVERCLUSTERNETWORKNAME="{{ cluster_name }}"
+
+          ; Quiet install
+          QUIET="True"
+          QUIETSIMPLE="False"
+        dest: C:\SQLInstall\ConfigurationFile.ini
+      when: sql_service is failed
+
+    - name: Mount SQL Server ISO
+      win_disk_image:
+        image_path: \\dc01\ISOs\SQLServer2022-DEV-x64-ENU.iso
+        state: present
+      register: disk_image_out
+      when: sql_service is failed
+
+    - name: Install SQL Server (this may take 20-30 minutes)
+      win_shell: |
+        {{ disk_image_out.mount_paths[0] }}setup.exe /ConfigurationFile=C:\SQLInstall\ConfigurationFile.ini
+      when: sql_service is failed and disk_image_out is defined
+      async: 3600
+      poll: 30
+      register: sql_install
+
+    - name: Unmount SQL Server ISO
+      win_disk_image:
+        image_path: \\dc01\ISOs\SQLServer2022-DEV-x64-ENU.iso
+        state: absent
+      when: disk_image_out is defined
+
+    - name: Enable Always On Availability Groups
+      win_shell: |
+        Import-Module SQLPS -DisableNameChecking
+        Enable-SqlAlwaysOn -ServerInstance {{ inventory_hostname }} -Force
+      register: enable_alwayson
+
+    - name: Restart SQL Server service
+      win_service:
+        name: MSSQLSERVER
+        state: restarted
+      when: enable_alwayson is changed
+
+    - name: Wait for SQL Server to be ready
+      win_wait_for:
+        port: 1433
+        timeout: 300
+
+    - name: Configure SQL Server for Always On
+      win_shell: |
+        $query = @"
+        -- Enable xp_cmdshell (if needed for automation)
+        EXEC sp_configure 'show advanced options', 1;
+        RECONFIGURE;
+
+        -- Set max server memory (leave 4GB for OS)
+        EXEC sp_configure 'max server memory (MB)', 8192;
+        RECONFIGURE;
+
+        -- Enable backup compression
+        EXEC sp_configure 'backup compression default', 1;
+        RECONFIGURE;
+
+        -- Set recovery interval
+        EXEC sp_configure 'recovery interval (min)', 5;
+        RECONFIGURE;
+        "@
+
+        Invoke-Sqlcmd -ServerInstance localhost -Query $query
+      ignore_errors: yes
+
+    - name: Display SQL Server installation status
+      debug:
+        msg: |
+          SQL Server Installation Complete: {{ inventory_hostname }}
+          Instance: MSSQLSERVER
+          Version: SQL Server 2022 Developer Edition
+          Service Account: {{ domain_netbios_name }}\{{ sql_service_account }}
+          Always On: Enabled
+          Port: 1433

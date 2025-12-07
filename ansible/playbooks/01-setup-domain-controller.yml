@@ -1,0 +1,74 @@
+---
+- name: Setup Active Directory Domain Controller
+  hosts: domain_controllers
+  gather_facts: yes
+
+  tasks:
+    - name: Set DNS to localhost for DC
+      win_dns_client:
+        adapter_names: '*'
+        dns_servers:
+          - 127.0.0.1
+
+    - name: Install AD-Domain-Services feature
+      win_feature:
+        name: AD-Domain-Services
+        include_management_tools: yes
+        include_sub_features: yes
+        state: present
+      register: ad_install
+
+    - name: Reboot if required after AD DS installation
+      win_reboot:
+        reboot_timeout: 600
+      when: ad_install.reboot_required
+
+    - name: Install DNS Server feature
+      win_feature:
+        name: DNS
+        include_management_tools: yes
+        state: present
+
+    - name: Create new Active Directory forest
+      win_domain:
+        dns_domain_name: "{{ domain_name }}"
+        safe_mode_password: "{{ domain_admin_password }}"
+        domain_netbios_name: "{{ domain_netbios_name }}"
+        forest_mode: WinThreshold
+        domain_mode: WinThreshold
+        create_dns_delegation: no
+      register: ad_forest
+
+    - name: Reboot after domain creation
+      win_reboot:
+        reboot_timeout: 600
+      when: ad_forest.reboot_required
+
+    - name: Wait for Active Directory Web Services
+      win_service:
+        name: ADWS
+        state: started
+      retries: 10
+      delay: 30
+      until: result is success
+      register: result
+
+    - name: Configure DNS forwarders
+      win_shell: |
+        Add-DnsServerForwarder -IPAddress 8.8.8.8
+        Add-DnsServerForwarder -IPAddress 8.8.4.4
+      ignore_errors: yes
+
+    - name: Create reverse lookup zone
+      win_shell: |
+        Add-DnsServerPrimaryZone -NetworkID "192.168.100.0/24" -ReplicationScope "Forest"
+      ignore_errors: yes
+
+    - name: Display domain controller status
+      debug:
+        msg: |
+          Domain Controller Setup Complete!
+          Domain: {{ domain_name }}
+          NetBIOS: {{ domain_netbios_name }}
+          DC IP: {{ ansible_host }}
+          DNS Server: Ready

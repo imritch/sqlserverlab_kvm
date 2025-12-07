@@ -1,0 +1,76 @@
+---
+- name: Create Windows Failover Cluster
+  hosts: sql_servers
+  gather_facts: no
+  serial: 1
+
+  tasks:
+    - name: Test cluster configuration (run on first node only)
+      win_shell: |
+        Test-Cluster -Node sql01.{{ domain_name }},sql02.{{ domain_name }},sql03.{{ domain_name }} -Include "Inventory","Network","System Configuration"
+      register: cluster_test
+      when: inventory_hostname == 'sql01'
+      ignore_errors: yes
+
+    - name: Display cluster validation results
+      debug:
+        var: cluster_test.stdout_lines
+      when: inventory_hostname == 'sql01' and cluster_test is defined
+
+- name: Create the cluster (run on first node)
+  hosts: sql01
+  gather_facts: no
+
+  tasks:
+    - name: Create Windows Failover Cluster
+      win_shell: |
+        New-Cluster -Name {{ cluster_name }} `
+          -Node sql01.{{ domain_name }},sql02.{{ domain_name }},sql03.{{ domain_name }} `
+          -StaticAddress {{ cluster_ip }} `
+          -NoStorage
+      register: cluster_create
+      ignore_errors: yes
+
+    - name: Display cluster creation result
+      debug:
+        var: cluster_create
+
+    - name: Set cluster quorum to Node Majority
+      win_shell: |
+        Set-ClusterQuorum -NodeMajority
+      when: cluster_create is succeeded
+
+    - name: Configure cluster network settings
+      win_shell: |
+        Get-ClusterNetwork | Set-ClusterNetwork -Name "Cluster Network 1" -Role ClusterAndClient
+
+    - name: Disable cluster shared volumes (not needed for AG)
+      win_shell: |
+        Disable-ClusterStorageSpacesDirect -Confirm:$false
+      ignore_errors: yes
+
+    - name: Get cluster information
+      win_shell: |
+        Get-Cluster | Format-List *
+      register: cluster_info
+
+    - name: Display cluster information
+      debug:
+        msg: |
+          Windows Failover Cluster Created!
+          Cluster Name: {{ cluster_name }}
+          Cluster IP: {{ cluster_ip }}
+          Nodes:
+            - sql01.{{ domain_name }}
+            - sql02.{{ domain_name }}
+            - sql03.{{ domain_name }}
+          Quorum: Node Majority
+
+    - name: Get cluster nodes
+      win_shell: |
+        Get-ClusterNode | Format-Table Name, State, NodeWeight -AutoSize
+      register: cluster_nodes
+
+    - name: Display cluster nodes
+      debug:
+        var: cluster_nodes.stdout_lines

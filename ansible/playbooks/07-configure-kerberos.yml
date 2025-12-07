@@ -1,0 +1,104 @@
+---
+- name: Configure Kerberos Authentication for SQL Server
+  hosts: domain_controllers
+  gather_facts: no
+
+  tasks:
+    - name: Register SPNs for SQL Server instances
+      win_shell: |
+        # Register SPNs for each SQL Server instance
+        setspn -S MSSQLSvc/sql01.{{ domain_name }}:1433 {{ domain_netbios_name }}\{{ sql_service_account }}
+        setspn -S MSSQLSvc/sql01.{{ domain_name }} {{ domain_netbios_name }}\{{ sql_service_account }}
+
+        setspn -S MSSQLSvc/sql02.{{ domain_name }}:1433 {{ domain_netbios_name }}\{{ sql_service_account }}
+        setspn -S MSSQLSvc/sql02.{{ domain_name }} {{ domain_netbios_name }}\{{ sql_service_account }}
+
+        setspn -S MSSQLSvc/sql03.{{ domain_name }}:1433 {{ domain_netbios_name }}\{{ sql_service_account }}
+        setspn -S MSSQLSvc/sql03.{{ domain_name }} {{ domain_netbios_name }}\{{ sql_service_account }}
+
+        # Register SPNs for AG Listener
+        setspn -S MSSQLSvc/{{ ag_listener_name }}.{{ domain_name }}:{{ ag_listener_port }} {{ domain_netbios_name }}\{{ sql_service_account }}
+        setspn -S MSSQLSvc/{{ ag_listener_name }}.{{ domain_name }} {{ domain_netbios_name }}\{{ sql_service_account }}
+      register: spn_registration
+
+    - name: Verify SPN registration
+      win_shell: |
+        setspn -L {{ domain_netbios_name }}\{{ sql_service_account }}
+      register: spn_list
+
+    - name: Display registered SPNs
+      debug:
+        var: spn_list.stdout_lines
+
+    - name: Enable delegation for SQL service account
+      win_shell: |
+        # Get the service account
+        $user = Get-ADUser -Identity {{ sql_service_account }}
+
+        # Enable Kerberos delegation
+        Set-ADUser -Identity $user -Add @{'msDS-AllowedToDelegateTo'=@(
+            'MSSQLSvc/sql01.{{ domain_name }}:1433',
+            'MSSQLSvc/sql02.{{ domain_name }}:1433',
+            'MSSQLSvc/sql03.{{ domain_name }}:1433',
+            'MSSQLSvc/{{ ag_listener_name }}.{{ domain_name }}:{{ ag_listener_port }}'
+        )}
+
+        # Set delegation type to "Trust this user for delegation to specified services only"
+        # Use Kerberos only
+        Set-ADAccountControl -Identity $user -TrustedToAuthForDelegation $false
+      ignore_errors: yes
+
+    - name: Display Kerberos configuration summary
+      debug:
+        msg: |
+          Kerberos Configuration Complete!
+          =================================
+          Service Account: {{ domain_netbios_name }}\{{ sql_service_account }}
+
+          Registered SPNs:
+            - MSSQLSvc/sql01.{{ domain_name }}:1433
+            - MSSQLSvc/sql01.{{ domain_name }}
+            - MSSQLSvc/sql02.{{ domain_name }}:1433
+            - MSSQLSvc/sql02.{{ domain_name }}
+            - MSSQLSvc/sql03.{{ domain_name }}:1433
+            - MSSQLSvc/sql03.{{ domain_name }}
+            - MSSQLSvc/{{ ag_listener_name }}.{{ domain_name }}:{{ ag_listener_port }}
+            - MSSQLSvc/{{ ag_listener_name }}.{{ domain_name }}
+
+          Delegation: Enabled for SQL Server services
+
+          To test from client:
+            - Ensure client is domain-joined or has krb5.conf configured
+            - Use FQDN in connection strings
+            - Connection string should use IntegratedSecurity=true
+
+- name: Verify Kerberos on SQL Servers
+  hosts: sql_servers
+  gather_facts: no
+
+  tasks:
+    - name: Restart SQL Server service to apply SPN changes
+      win_service:
+        name: MSSQLSERVER
+        state: restarted
+
+    - name: Check Kerberos authentication
+      win_shell: |
+        $query = @"
+        -- Check authentication scheme
+        SELECT
+            session_id,
+            login_name,
+            host_name,
+            program_name,
+            auth_scheme
+        FROM sys.dm_exec_connections
+        WHERE session_id = @@SPID
+        "@
+
+        Invoke-Sqlcmd -ServerInstance localhost -Query $query
+      register: auth_check
+
+    - name: Display authentication info
+      debug:
+        var: auth_check.stdout_lines

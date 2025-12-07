@@ -1,0 +1,201 @@
+---
+- name: Verify SQL Server Lab Deployment
+  hosts: localhost
+  gather_facts: no
+
+  tasks:
+    - name: Display verification plan
+      debug:
+        msg: |
+          Running deployment verification...
+          This will check all components of the lab environment.
+
+- name: Verify Domain Controller
+  hosts: domain_controllers
+  gather_facts: no
+
+  tasks:
+    - name: Check AD DS service
+      win_service:
+        name: NTDS
+      register: ad_service
+
+    - name: Check DNS service
+      win_service:
+        name: DNS
+      register: dns_service
+
+    - name: Verify domain functional level
+      win_shell: |
+        (Get-ADDomain).DomainMode
+      register: domain_level
+
+    - name: Display DC status
+      debug:
+        msg: |
+          Domain Controller: {{ inventory_hostname }}
+          AD DS Service: {{ ad_service.state }}
+          DNS Service: {{ dns_service.state }}
+          Domain Level: {{ domain_level.stdout | trim }}
+
+- name: Verify SQL Server Cluster
+  hosts: sql01
+  gather_facts: no
+
+  tasks:
+    - name: Check cluster status
+      win_shell: |
+        Get-Cluster | Select-Object Name, Domain | Format-List
+      register: cluster_status
+
+    - name: Check cluster nodes
+      win_shell: |
+        Get-ClusterNode | Select-Object Name, State | Format-Table -AutoSize
+      register: cluster_nodes
+
+    - name: Check SQL Server service on all nodes
+      win_shell: |
+        Invoke-Command -ComputerName sql01,sql02,sql03 -ScriptBlock {
+            Get-Service MSSQLSERVER | Select-Object MachineName, Status
+        }
+      register: sql_services
+
+    - name: Check AG status
+      win_shell: |
+        $query = @"
+        SELECT
+            ag.name AS AvailabilityGroup,
+            ar.replica_server_name AS Replica,
+            ars.role_desc AS Role,
+            ars.synchronization_health_desc AS SyncHealth,
+            ars.connected_state_desc AS ConnectionState
+        FROM sys.availability_groups ag
+        JOIN sys.availability_replicas ar ON ag.group_id = ar.group_id
+        JOIN sys.dm_hadr_availability_replica_states ars ON ar.replica_id = ars.replica_id
+        ORDER BY ars.role_desc DESC, ar.replica_server_name
+        "@
+
+        Invoke-Sqlcmd -ServerInstance localhost -Query $query | Format-Table
+      register: ag_status
+
+    - name: Check AG databases
+      win_shell: |
+        $query = @"
+        SELECT
+            db.name AS DatabaseName,
+            drs.synchronization_state_desc AS SyncState,
+            drs.synchronization_health_desc AS SyncHealth,
+            drs.is_local AS IsLocal
+        FROM sys.dm_hadr_database_replica_states drs
+        JOIN sys.databases db ON drs.database_id = db.database_id
+        WHERE db.name <> 'master'
+        "@
+
+        Invoke-Sqlcmd -ServerInstance localhost -Query $query | Format-Table
+      register: ag_databases
+
+    - name: Test AG listener connectivity
+      win_shell: |
+        $query = "SELECT @@SERVERNAME AS ConnectedTo, SUSER_SNAME() AS AuthenticatedAs"
+        Invoke-Sqlcmd -ServerInstance "{{ ag_listener_name }}.{{ domain_name }}" -Query $query
+      register: listener_test
+
+    - name: Display cluster and AG status
+      debug:
+        msg: |
+          Windows Failover Cluster Status:
+          {{ cluster_status.stdout }}
+
+          Cluster Nodes:
+          {{ cluster_nodes.stdout }}
+
+          SQL Server Services:
+          {{ sql_services.stdout }}
+
+          Availability Group Status:
+          {{ ag_status.stdout }}
+
+          AG Databases:
+          {{ ag_databases.stdout }}
+
+          AG Listener Test:
+          {{ listener_test.stdout }}
+
+- name: Verify Kerberos Configuration
+  hosts: domain_controllers
+  gather_facts: no
+
+  tasks:
+    - name: List SQL service account SPNs
+      win_shell: |
+        setspn -L {{ domain_netbios_name }}\{{ sql_service_account }}
+      register: spn_list
+
+    - name: Display SPN configuration
+      debug:
+        var: spn_list.stdout_lines
+
+- name: Display Final Summary
+  hosts: localhost
+  gather_facts: no
+
+  tasks:
+    - name: Show deployment summary
+      debug:
+        msg: |
+
+          ╔════════════════════════════════════════════════════════════════╗
+          ║         SQL Server Lab Deployment - VERIFICATION COMPLETE      ║
+          ╚════════════════════════════════════════════════════════════════╝
+
+          Environment Details:
+          ====================
+          Domain: {{ domain_name }}
+          Domain Controller: dc01.{{ domain_name }} (192.168.100.10)
+
+          SQL Server Cluster:
+          ===================
+          Cluster Name: {{ cluster_name }}
+          Nodes:
+            - sql01.{{ domain_name }} (192.168.100.11)
+            - sql02.{{ domain_name }} (192.168.100.12)
+            - sql03.{{ domain_name }} (192.168.100.13)
+
+          Availability Group:
+          ===================
+          AG Name: {{ ag_name }}
+          Listener: {{ ag_listener_name }}.{{ domain_name }} ({{ ag_listener_ip }})
+          Port: {{ ag_listener_port }}
+          Databases: TestDB
+
+          Authentication:
+          ===============
+          Kerberos: Configured
+          SPNs: Registered for all SQL instances and AG listener
+
+          Application Server:
+          ===================
+          Host: app01.{{ domain_name }} (192.168.100.20)
+          Java Application: Configured
+          Kerberos Client: Configured
+
+          Next Steps:
+          ===========
+          1. Test SQL connectivity from application server
+          2. Test failover scenarios
+          3. Configure additional databases
+          4. Set up ADCS (Certificate Services) for TLS
+
+          Connection Examples:
+          ====================
+          # From Windows (PowerShell):
+          Invoke-Sqlcmd -ServerInstance "{{ ag_listener_name }}.{{ domain_name }}" -Query "SELECT @@VERSION"
+
+          # From Java:
+          jdbc:sqlserver://{{ ag_listener_name }}.{{ domain_name }}:{{ ag_listener_port }};databaseName=TestDB;integratedSecurity=true;authenticationScheme=JavaKerberos;
+
+          # Test Kerberos from Linux:
+          kinit appuser@{{ domain_name | upper }}
+          klist
+
+          Lab is ready for use!

@@ -1,0 +1,87 @@
+---
+- name: Configure Active Directory Objects
+  hosts: domain_controllers
+  gather_facts: no
+
+  tasks:
+    - name: Create SQL Server OU
+      win_domain_ou:
+        name: SQL Servers
+        path: "DC={{ domain_name.split('.')[0] }},DC={{ domain_name.split('.')[1] }}"
+        state: present
+      delegate_to: dc01
+
+    - name: Create Service Accounts OU
+      win_domain_ou:
+        name: Service Accounts
+        path: "DC={{ domain_name.split('.')[0] }},DC={{ domain_name.split('.')[1] }}"
+        state: present
+
+    - name: Create SQL Service Account
+      win_domain_user:
+        name: "{{ sql_service_account }}"
+        password: "{{ sql_service_password }}"
+        state: present
+        path: "OU=Service Accounts,DC={{ domain_name.split('.')[0] }},DC={{ domain_name.split('.')[1] }}"
+        update_password: on_create
+        password_never_expires: yes
+        user_cannot_change_password: yes
+        account_locked: no
+        groups:
+          - Domain Users
+        attributes:
+          description: SQL Server Service Account
+
+    - name: Create SQL Agent Service Account
+      win_domain_user:
+        name: "{{ sql_agent_account }}"
+        password: "{{ sql_agent_password }}"
+        state: present
+        path: "OU=Service Accounts,DC={{ domain_name.split('.')[0] }},DC={{ domain_name.split('.')[1] }}"
+        update_password: on_create
+        password_never_expires: yes
+        user_cannot_change_password: yes
+        account_locked: no
+        groups:
+          - Domain Users
+        attributes:
+          description: SQL Server Agent Service Account
+
+    - name: Create SQL Admins group
+      win_domain_group:
+        name: SQL Admins
+        scope: global
+        category: security
+        state: present
+        organizational_unit: "OU=Service Accounts,DC={{ domain_name.split('.')[0] }},DC={{ domain_name.split('.')[1] }}"
+
+    - name: Add service accounts to SQL Admins
+      win_domain_group_membership:
+        name: SQL Admins
+        members:
+          - "{{ sql_service_account }}"
+          - "{{ sql_agent_account }}"
+        state: present
+
+    - name: Create DNS A records for SQL nodes
+      win_shell: |
+        Add-DnsServerResourceRecordA -Name "sql01" -ZoneName "{{ domain_name }}" -IPv4Address "192.168.100.11" -CreatePtr
+        Add-DnsServerResourceRecordA -Name "sql02" -ZoneName "{{ domain_name }}" -IPv4Address "192.168.100.12" -CreatePtr
+        Add-DnsServerResourceRecordA -Name "sql03" -ZoneName "{{ domain_name }}" -IPv4Address "192.168.100.13" -CreatePtr
+        Add-DnsServerResourceRecordA -Name "ag01-listener" -ZoneName "{{ domain_name }}" -IPv4Address "192.168.100.15"
+      ignore_errors: yes
+
+    - name: Display AD configuration
+      debug:
+        msg: |
+          Active Directory Configuration Complete!
+          Service Accounts Created:
+            - {{ domain_netbios_name }}\{{ sql_service_account }}
+            - {{ domain_netbios_name }}\{{ sql_agent_account }}
+          Groups Created:
+            - SQL Admins
+          DNS Records:
+            - sql01.{{ domain_name }} -> 192.168.100.11
+            - sql02.{{ domain_name }} -> 192.168.100.12
+            - sql03.{{ domain_name }} -> 192.168.100.13
+            - ag01-listener.{{ domain_name }} -> 192.168.100.15

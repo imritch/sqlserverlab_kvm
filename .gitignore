@@ -1,0 +1,67 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+.terraform.lock.hcl
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Ansible
+*.retry
+.ansible/
+ansible.log
+
+# Vagrant
+.vagrant/
+*.box
+
+# ISOs and large binary files
+*.iso
+*.vhd
+*.vhdx
+*.qcow2
+*.vmdk
+
+# SSH keys
+*.pem
+*.key
+id_rsa*
+*.pub
+
+# Credentials and secrets
+**/secrets/
+**/credentials/
+*.secret
+*.password
+.env
+.env.*
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# VM disk images (keep configs, not actual disk images)
+*.qcow2
+*.img

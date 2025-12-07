@@ -1,0 +1,66 @@
+---
+all:
+  vars:
+    ansible_user: Administrator
+    ansible_password: P@ssw0rd123!  # Change this!
+    ansible_connection: winrm
+    ansible_winrm_transport: basic
+    ansible_winrm_server_cert_validation: ignore
+    ansible_winrm_scheme: http
+    ansible_port: 5985
+
+    # Domain configuration
+    domain_name: lab.local
+    domain_netbios_name: LAB
+    domain_admin_user: Administrator
+    domain_admin_password: P@ssw0rd123!
+
+    # SQL Server configuration
+    sql_service_account: sqlservice
+    sql_service_password: SQLSvc@123!
+    sql_agent_account: sqlagent
+    sql_agent_password: SQLAgent@123!
+    sql_sa_password: SA@Password123!
+
+    # SQL AG configuration
+    ag_name: AG01
+    ag_listener_name: ag01-listener
+    ag_listener_ip: 192.168.100.15
+    ag_listener_port: 1433
+
+    # Cluster configuration
+    cluster_name: SQLCLUSTER
+    cluster_ip: 192.168.100.14
+
+  children:
+    windows:
+      children:
+        domain_controllers:
+          hosts:
+            dc01:
+              ansible_host: 192.168.100.10
+
+        sql_servers:
+          hosts:
+            sql01:
+              ansible_host: 192.168.100.11
+              sql_instance_name: MSSQLSERVER
+              is_primary_replica: true
+            sql02:
+              ansible_host: 192.168.100.12
+              sql_instance_name: MSSQLSERVER
+              is_primary_replica: false
+            sql03:
+              ansible_host: 192.168.100.13
+              sql_instance_name: MSSQLSERVER
+              is_primary_replica: false
+
+    linux:
+      children:
+        application_servers:
+          hosts:
+            app01:
+              ansible_host: 192.168.100.20
+              ansible_connection: ssh
+              ansible_user: ubuntu
+              ansible_become: yes
