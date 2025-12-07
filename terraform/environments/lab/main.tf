@@ -35,9 +35,14 @@ data "template_file" "unattend_xml" {
     hostname       = each.key
     admin_password = var.admin_password
     ip_address     = each.value.ip_address
-    gateway        = "192.168.100.1"
-    dns_server     = "192.168.100.10"
-    domain_name    = var.domain_name
+    # Gateway is .1 of the respective subnet
+    gateway = each.value.subnet == "shared" ? "192.168.100.1" : (
+      each.value.subnet == "sql1" ? "192.168.101.1" : (
+        each.value.subnet == "sql2" ? "192.168.102.1" : "192.168.103.1"
+      )
+    )
+    dns_server  = "192.168.100.10"
+    domain_name = var.domain_name
   }
 }
 
@@ -77,7 +82,12 @@ resource "libvirt_domain" "vm" {
   }
 
   network_interface {
-    network_id     = libvirt_network.lab_network.id
+    # Assign VM to the correct network based on subnet
+    network_id = each.value.subnet == "shared" ? libvirt_network.shared_network.id : (
+      each.value.subnet == "sql1" ? libvirt_network.sql_subnet1.id : (
+        each.value.subnet == "sql2" ? libvirt_network.sql_subnet2.id : libvirt_network.sql_subnet3.id
+      )
+    )
     hostname       = each.key
     addresses      = [each.value.ip_address]
     wait_for_lease = false

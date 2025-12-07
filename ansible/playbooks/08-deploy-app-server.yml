@@ -103,10 +103,13 @@
                   System.setProperty("java.security.auth.login.config", "{{ app_dir }}/jaas.conf");
                   System.setProperty("javax.security.auth.useSubjectCredsOnly", "false");
 
+                  // Multi-Subnet AG connection string
+                  // MultiSubnetFailover=true is REQUIRED for multi-subnet AG
                   String connectionUrl = "jdbc:sqlserver://{{ ag_listener_name }}.{{ domain_name }}:{{ ag_listener_port }};" +
                                        "databaseName=TestDB;" +
                                        "integratedSecurity=true;" +
                                        "authenticationScheme=JavaKerberos;" +
+                                       "multiSubnetFailover=true;" +
                                        "trustServerCertificate=true;";
 
                   System.out.println("Attempting to connect to SQL Server...");

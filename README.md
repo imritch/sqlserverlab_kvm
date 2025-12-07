@@ -1,16 +1,25 @@
 # SQL Server Lab Environment
 
-Automated SQL Server Always On Availability Group lab environment on Ubuntu 24 using KVM/QEMU.
+Automated SQL Server Always On Availability Group lab environment on Ubuntu 24 using KVM/QEMU with **multi-subnet configuration** that mimics production cloud environments (AWS Multi-AZ, Azure Availability Zones).
 
 ## Architecture
 
 This lab environment creates:
+- **Multi-Subnet Network Design** - 4 isolated subnets for realistic cloud-like deployment
 - 1x Active Directory Domain Controller (Windows Server 2022)
-- 3x SQL Server nodes in Windows Failover Cluster (Windows Server 2022)
+- 3x SQL Server nodes in **Multi-Subnet** Windows Failover Cluster (Windows Server 2022)
 - 1x Java application server (Linux/Windows)
-- SQL Server Developer Edition with Always On Availability Groups
+- SQL Server Developer Edition with **Multi-Subnet** Always On Availability Groups
 - Kerberos authentication
 - Future: ADCS for TLS certificate management
+
+### Why Multi-Subnet?
+
+This lab uses a multi-subnet architecture to accurately simulate production environments:
+- **AWS RDS Multi-AZ**: SQL instances in different availability zones (subnets)
+- **Azure SQL AG**: Replicas across different availability zones
+- **Production Best Practice**: Subnet isolation for fault tolerance and security
+- **Realistic Failover Testing**: Cross-subnet failover scenarios
 
 ## System Requirements
 
@@ -94,28 +103,50 @@ ansible-playbook -i inventory/lab.yml playbooks/site.yml
 └── vms/                    # VM disk images (gitignored)
 ```
 
-## Network Configuration
+## Multi-Subnet Network Configuration
 
-- Network: 192.168.100.0/24
-- Gateway: 192.168.100.1
-- Domain: lab.local
-- DNS: 192.168.100.10 (dc01)
+The lab uses **4 separate subnets** to simulate production multi-AZ/multi-zone deployments:
 
-| Hostname | IP Address | FQDN |
-|----------|------------|------|
-| dc01 | 192.168.100.10 | dc01.lab.local |
-| sql01 | 192.168.100.11 | sql01.lab.local |
-| sql02 | 192.168.100.12 | sql02.lab.local |
-| sql03 | 192.168.100.13 | sql03.lab.local |
-| app01 | 192.168.100.20 | app01.lab.local |
+| Subnet Name | CIDR | Purpose | VMs |
+|-------------|------|---------|-----|
+| **Shared/Management** | 192.168.100.0/24 | Domain Controller, App Server | dc01, app01 |
+| **SQL Subnet 1** | 192.168.101.0/24 | SQL Server Primary | sql01 |
+| **SQL Subnet 2** | 192.168.102.0/24 | SQL Server Secondary | sql02 |
+| **SQL Subnet 3** | 192.168.103.0/24 | SQL Server Secondary | sql03 |
 
-## SQL Server Configuration
+### VM IP Addresses
+
+| Hostname | IP Address | Subnet | FQDN |
+|----------|------------|--------|------|
+| dc01 | 192.168.100.10 | Shared | dc01.lab.local |
+| sql01 | 192.168.101.11 | SQL Subnet 1 | sql01.lab.local |
+| sql02 | 192.168.102.12 | SQL Subnet 2 | sql02.lab.local |
+| sql03 | 192.168.103.13 | SQL Subnet 3 | sql03.lab.local |
+| app01 | 192.168.100.20 | Shared | app01.lab.local |
+
+### Cluster and AG Listener IPs
+
+| Resource | IPs | Purpose |
+|----------|-----|---------|
+| **Cluster IPs** | 192.168.101.14, 192.168.102.14, 192.168.103.14 | Multi-subnet cluster (one IP per subnet) |
+| **AG Listener IPs** | 192.168.101.15, 192.168.102.15, 192.168.103.15 | Multi-subnet AG listener (one IP per subnet) |
+
+**Domain:** lab.local
+**DNS:** 192.168.100.10 (dc01)
+
+## SQL Server Multi-Subnet Configuration
 
 - **Instance Name:** MSSQLSERVER (default)
 - **Service Account:** lab\sqlservice
+- **Cluster Name:** SQLCLUSTER
+- **Cluster Type:** Multi-Subnet Windows Failover Cluster
+- **Cluster IPs:** 192.168.101.14, 192.168.102.14, 192.168.103.14
 - **AG Name:** AG01
-- **AG Listener:** ag01-listener.lab.local (192.168.100.15)
-- **Databases:** Initially empty, configured for AG
+- **AG Type:** Multi-Subnet Always On Availability Group
+- **AG Listener:** ag01-listener.lab.local
+- **AG Listener IPs:** 192.168.101.15, 192.168.102.15, 192.168.103.15 (one per subnet)
+- **Databases:** TestDB (configured for multi-subnet AG)
+- **Failover:** Automatic failover across subnets (sql01 ↔ sql02), manual for sql03
 
 ## Kerberos Configuration
 
@@ -125,13 +156,16 @@ ansible-playbook -i inventory/lab.yml playbooks/site.yml
 
 ## Usage
 
-### Connecting to SQL Server from Java App
+### Connecting to Multi-Subnet AG from Java App
+
+**IMPORTANT:** Multi-subnet AG connections **require** `multiSubnetFailover=true`:
 
 ```java
 String connectionUrl = "jdbc:sqlserver://ag01-listener.lab.local:1433;"
     + "databaseName=TestDB;"
     + "integratedSecurity=true;"
-    + "authenticationScheme=JavaKerberos;";
+    + "authenticationScheme=JavaKerberos;"
+    + "multiSubnetFailover=true;";  // REQUIRED for multi-subnet!
 ```
 
 ### Managing VMs

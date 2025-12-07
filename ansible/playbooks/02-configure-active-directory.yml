@@ -63,12 +63,19 @@
           - "{{ sql_agent_account }}"
         state: present
 
-    - name: Create DNS A records for SQL nodes
+    - name: Create DNS A records for SQL nodes (multi-subnet)
       win_shell: |
-        Add-DnsServerResourceRecordA -Name "sql01" -ZoneName "{{ domain_name }}" -IPv4Address "192.168.100.11" -CreatePtr
-        Add-DnsServerResourceRecordA -Name "sql02" -ZoneName "{{ domain_name }}" -IPv4Address "192.168.100.12" -CreatePtr
-        Add-DnsServerResourceRecordA -Name "sql03" -ZoneName "{{ domain_name }}" -IPv4Address "192.168.100.13" -CreatePtr
-        Add-DnsServerResourceRecordA -Name "ag01-listener" -ZoneName "{{ domain_name }}" -IPv4Address "192.168.100.15"
+        # SQL Server nodes in different subnets
+        Add-DnsServerResourceRecordA -Name "sql01" -ZoneName "{{ domain_name }}" -IPv4Address "192.168.101.11" -CreatePtr
+        Add-DnsServerResourceRecordA -Name "sql02" -ZoneName "{{ domain_name }}" -IPv4Address "192.168.102.12" -CreatePtr
+        Add-DnsServerResourceRecordA -Name "sql03" -ZoneName "{{ domain_name }}" -IPv4Address "192.168.103.13" -CreatePtr
+
+        # AG Listener will have multiple A records (multi-subnet configuration)
+        # The cluster resource will manage which IP is active
+        # Note: These records will be created/managed by the cluster, but we pre-create for reference
+        Add-DnsServerResourceRecordA -Name "ag01-listener" -ZoneName "{{ domain_name }}" -IPv4Address "{{ ag_listener_ips[0] }}" -AllowUpdateAny
+        Add-DnsServerResourceRecordA -Name "ag01-listener" -ZoneName "{{ domain_name }}" -IPv4Address "{{ ag_listener_ips[1] }}" -AllowUpdateAny
+        Add-DnsServerResourceRecordA -Name "ag01-listener" -ZoneName "{{ domain_name }}" -IPv4Address "{{ ag_listener_ips[2] }}" -AllowUpdateAny
       ignore_errors: yes
 
     - name: Display AD configuration
@@ -80,8 +87,8 @@
             - {{ domain_netbios_name }}\{{ sql_agent_account }}
           Groups Created:
             - SQL Admins
-          DNS Records:
-            - sql01.{{ domain_name }} -> 192.168.100.11
-            - sql02.{{ domain_name }} -> 192.168.100.12
-            - sql03.{{ domain_name }} -> 192.168.100.13
-            - ag01-listener.{{ domain_name }} -> 192.168.100.15
+          DNS Records (Multi-Subnet):
+            - sql01.{{ domain_name }} -> 192.168.101.11 (SQL Subnet 1)
+            - sql02.{{ domain_name }} -> 192.168.102.12 (SQL Subnet 2)
+            - sql03.{{ domain_name }} -> 192.168.103.13 (SQL Subnet 3)
+            - ag01-listener.{{ domain_name }} -> {{ ag_listener_ips[0] }}, {{ ag_listener_ips[1] }}, {{ ag_listener_ips[2] }} (Multi-Subnet Listener)

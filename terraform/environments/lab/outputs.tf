@@ -6,11 +6,25 @@ output "vm_ips" {
 }
 
 output "network_info" {
-  description = "Network configuration"
+  description = "Multi-subnet network configuration"
   value = {
-    network_name = libvirt_network.lab_network.name
-    cidr         = var.network_cidr
-    domain       = var.domain_name
+    shared_network = {
+      name = libvirt_network.shared_network.name
+      cidr = var.network_cidrs.shared
+    }
+    sql_subnet1 = {
+      name = libvirt_network.sql_subnet1.name
+      cidr = var.network_cidrs.sql1
+    }
+    sql_subnet2 = {
+      name = libvirt_network.sql_subnet2.name
+      cidr = var.network_cidrs.sql2
+    }
+    sql_subnet3 = {
+      name = libvirt_network.sql_subnet3.name
+      cidr = var.network_cidrs.sql3
+    }
+    domain = var.domain_name
   }
 }
 
@@ -22,6 +36,7 @@ output "connection_info" {
       vcpu       = v.vcpu
       memory_mb  = v.memory
       ip_address = var.vms[k].ip_address
+      subnet     = var.vms[k].subnet
     }
   }
 }
@@ -37,16 +52,28 @@ output "domain_info" {
 }
 
 output "sql_cluster_info" {
-  description = "SQL Server cluster information"
+  description = "SQL Server multi-subnet cluster information"
   value = {
     nodes = [
       for k, v in var.vms : {
-        name = k
-        ip   = v.ip_address
-        fqdn = "${k}.${var.domain_name}"
+        name   = k
+        ip     = v.ip_address
+        subnet = v.subnet
+        fqdn   = "${k}.${var.domain_name}"
       } if v.role == "sql-server"
     ]
-    ag_listener_ip = "192.168.100.15"
-    ag_name        = "AG01"
+    ag_listener_ips = [
+      "192.168.101.15",  # SQL Subnet 1
+      "192.168.102.15",  # SQL Subnet 2
+      "192.168.103.15"   # SQL Subnet 3
+    ]
+    ag_listener_name = "ag01-listener.${var.domain_name}"
+    ag_name          = "AG01"
+    cluster_ips = [
+      "192.168.101.14",  # Cluster IP in SQL Subnet 1
+      "192.168.102.14",  # Cluster IP in SQL Subnet 2
+      "192.168.103.14"   # Cluster IP in SQL Subnet 3
+    ]
+    multi_subnet_note = "Multi-subnet configuration mimics AWS Multi-AZ or Azure Availability Zones"
   }
 }

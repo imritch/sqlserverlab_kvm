@@ -22,11 +22,12 @@
   gather_facts: no
 
   tasks:
-    - name: Create Windows Failover Cluster
+    - name: Create Multi-Subnet Windows Failover Cluster
       win_shell: |
+        # Multi-subnet cluster requires multiple static IP addresses (one per subnet)
         New-Cluster -Name {{ cluster_name }} `
           -Node sql01.{{ domain_name }},sql02.{{ domain_name }},sql03.{{ domain_name }} `
-          -StaticAddress {{ cluster_ip }} `
+          -StaticAddress {{ cluster_ips | join(',') }} `
           -NoStorage
       register: cluster_create
       ignore_errors: yes
@@ -40,9 +41,19 @@
         Set-ClusterQuorum -NodeMajority
       when: cluster_create is succeeded
 
-    - name: Configure cluster network settings
+    - name: Configure multi-subnet cluster network settings
       win_shell: |
-        Get-ClusterNetwork | Set-ClusterNetwork -Name "Cluster Network 1" -Role ClusterAndClient
+        # Configure all cluster networks for multi-subnet support
+        Get-ClusterNetwork | ForEach-Object {
+            Set-ClusterNetwork -InputObject $_ -Role ClusterAndClient
+        }
+
+        # Enable multi-subnet failover for the cluster
+        # Set SameSubnetDelay and CrossSubnetDelay for faster failover
+        Get-Cluster | Set-ClusterParameter -Name SameSubnetDelay -Value 1000
+        Get-Cluster | Set-ClusterParameter -Name CrossSubnetDelay -Value 1000
+        Get-Cluster | Set-ClusterParameter -Name SameSubnetThreshold -Value 5
+        Get-Cluster | Set-ClusterParameter -Name CrossSubnetThreshold -Value 5
 
     - name: Disable cluster shared volumes (not needed for AG)
       win_shell: |
@@ -54,17 +65,21 @@
         Get-Cluster | Format-List *
       register: cluster_info
 
-    - name: Display cluster information
+    - name: Display multi-subnet cluster information
       debug:
         msg: |
-          Windows Failover Cluster Created!
+          Multi-Subnet Windows Failover Cluster Created!
           Cluster Name: {{ cluster_name }}
-          Cluster IP: {{ cluster_ip }}
+          Cluster IPs (Multi-Subnet):
+            - {{ cluster_ips[0] }} (SQL Subnet 1)
+            - {{ cluster_ips[1] }} (SQL Subnet 2)
+            - {{ cluster_ips[2] }} (SQL Subnet 3)
           Nodes:
-            - sql01.{{ domain_name }}
-            - sql02.{{ domain_name }}
-            - sql03.{{ domain_name }}
+            - sql01.{{ domain_name }} (192.168.101.11)
+            - sql02.{{ domain_name }} (192.168.102.12)
+            - sql03.{{ domain_name }} (192.168.103.13)
           Quorum: Node Majority
+          Configuration: Multi-Subnet (mimics AWS Multi-AZ / Azure Availability Zones)
 
     - name: Get cluster nodes
       win_shell: |

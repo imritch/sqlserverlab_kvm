@@ -151,18 +151,38 @@
   gather_facts: no
 
   tasks:
-    - name: Create AG Listener
+    - name: Create Multi-Subnet AG Listener
       win_shell: |
         $query = @"
+        -- Create multi-subnet AG Listener with multiple IPs (one per subnet)
+        -- This configuration mimics AWS RDS Multi-AZ or Azure SQL AG deployments
         ALTER AVAILABILITY GROUP [{{ ag_name }}]
         ADD LISTENER N'{{ ag_listener_name }}' (
-            WITH IP ((N'{{ ag_listener_ip }}', N'255.255.255.0')),
+            WITH IP (
+                (N'{{ ag_listener_ips[0] }}', N'255.255.255.0'),  -- SQL Subnet 1
+                (N'{{ ag_listener_ips[1] }}', N'255.255.255.0'),  -- SQL Subnet 2
+                (N'{{ ag_listener_ips[2] }}', N'255.255.255.0')   -- SQL Subnet 3
+            ),
             PORT = {{ ag_listener_port }}
         )
         "@
 
         Invoke-Sqlcmd -ServerInstance localhost -Query $query
       register: listener_creation
+      ignore_errors: yes
+
+    - name: Configure multi-subnet listener properties
+      win_shell: |
+        # Set RegisterAllProvidersIP to 0 for faster failover in multi-subnet
+        # This makes clients try IPs sequentially instead of parallel
+        Import-Module FailoverClusters
+        Get-ClusterResource -Name "{{ ag_listener_name }}" | Set-ClusterParameter -Name RegisterAllProvidersIP -Value 0
+
+        # Reduce HostRecordTTL for faster DNS updates during failover
+        Get-ClusterResource -Name "{{ ag_listener_name }}" | Set-ClusterParameter -Name HostRecordTTL -Value 300
+
+        # Bring the resource online
+        Start-ClusterResource -Name "{{ ag_listener_name }}"
       ignore_errors: yes
 
     - name: Get AG status
@@ -188,22 +208,28 @@
       debug:
         var: ag_status.stdout_lines
 
-    - name: Display AG configuration summary
+    - name: Display multi-subnet AG configuration summary
       debug:
         msg: |
-          Always On Availability Group Configured!
-          =========================================
+          Multi-Subnet Always On Availability Group Configured!
+          ======================================================
           AG Name: {{ ag_name }}
           Listener: {{ ag_listener_name }}.{{ domain_name }}
-          Listener IP: {{ ag_listener_ip }}
+          Listener IPs (Multi-Subnet):
+            - {{ ag_listener_ips[0] }} (SQL Subnet 1 - sql01)
+            - {{ ag_listener_ips[1] }} (SQL Subnet 2 - sql02)
+            - {{ ag_listener_ips[2] }} (SQL Subnet 3 - sql03)
           Port: {{ ag_listener_port }}
 
           Replicas:
-            - sql01.{{ domain_name }} (Primary, Synchronous, Auto-Failover)
-            - sql02.{{ domain_name }} (Secondary, Synchronous, Auto-Failover)
-            - sql03.{{ domain_name }} (Secondary, Asynchronous, Manual-Failover)
+            - sql01.{{ domain_name }} (192.168.101.11) - Primary, Synchronous, Auto-Failover
+            - sql02.{{ domain_name }} (192.168.102.12) - Secondary, Synchronous, Auto-Failover
+            - sql03.{{ domain_name }} (192.168.103.13) - Secondary, Asynchronous, Manual-Failover
 
           Database: TestDB
 
-          Connection String:
-          Server={{ ag_listener_name }}.{{ domain_name }},{{ ag_listener_port }};Database=TestDB;Integrated Security=true;
+          Connection String (Multi-Subnet):
+          Server={{ ag_listener_name }}.{{ domain_name }},{{ ag_listener_port }};Database=TestDB;Integrated Security=true;MultiSubnetFailover=True;
+
+          Note: MultiSubnetFailover=True is REQUIRED for multi-subnet AG connections!
+          This configuration mimics AWS RDS Multi-AZ / Azure SQL AG deployments.

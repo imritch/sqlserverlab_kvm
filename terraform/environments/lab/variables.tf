@@ -4,16 +4,20 @@ variable "domain_name" {
   default     = "lab.local"
 }
 
-variable "network_cidr" {
-  description = "Network CIDR for lab environment"
-  type        = string
-  default     = "192.168.100.0/24"
-}
-
-variable "network_bridge" {
-  description = "Network bridge name"
-  type        = string
-  default     = "virbr-lab"
+variable "network_cidrs" {
+  description = "Network CIDRs for multi-subnet lab environment"
+  type = object({
+    shared = string
+    sql1   = string
+    sql2   = string
+    sql3   = string
+  })
+  default = {
+    shared = "192.168.100.0/24"
+    sql1   = "192.168.101.0/24"
+    sql2   = "192.168.102.0/24"
+    sql3   = "192.168.103.0/24"
+  }
 }
 
 variable "vm_storage_pool" {
@@ -45,6 +49,7 @@ variable "vms" {
   description = "VM configurations"
   type = map(object({
     ip_address = string
+    subnet     = string  # which subnet the VM belongs to
     vcpu       = number
     memory     = number # in MB
     disk_size  = number # in GB
@@ -54,27 +59,31 @@ variable "vms" {
   default = {
     dc01 = {
       ip_address = "192.168.100.10"
+      subnet     = "shared"
       vcpu       = 2
       memory     = 4096
       disk_size  = 60
       role       = "domain-controller"
     }
     sql01 = {
-      ip_address = "192.168.100.11"
+      ip_address = "192.168.101.11"
+      subnet     = "sql1"
       vcpu       = 4
       memory     = 12288
       disk_size  = 100
       role       = "sql-server"
     }
     sql02 = {
-      ip_address = "192.168.100.12"
+      ip_address = "192.168.102.12"
+      subnet     = "sql2"
       vcpu       = 4
       memory     = 12288
       disk_size  = 100
       role       = "sql-server"
     }
     sql03 = {
-      ip_address = "192.168.100.13"
+      ip_address = "192.168.103.13"
+      subnet     = "sql3"
       vcpu       = 4
       memory     = 12288
       disk_size  = 100
@@ -82,6 +91,7 @@ variable "vms" {
     }
     app01 = {
       ip_address = "192.168.100.20"
+      subnet     = "shared"
       vcpu       = 2
       memory     = 4096
       disk_size  = 40

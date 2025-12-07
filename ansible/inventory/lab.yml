@@ -22,15 +22,23 @@ all:
     sql_agent_password: SQLAgent@123!
     sql_sa_password: SA@Password123!
 
-    # SQL AG configuration
+    # SQL AG configuration - Multi-Subnet
     ag_name: AG01
     ag_listener_name: ag01-listener
-    ag_listener_ip: 192.168.100.15
     ag_listener_port: 1433
+    # Multi-subnet AG requires multiple listener IPs (one per subnet)
+    ag_listener_ips:
+      - 192.168.101.15  # SQL Subnet 1 (sql01)
+      - 192.168.102.15  # SQL Subnet 2 (sql02)
+      - 192.168.103.15  # SQL Subnet 3 (sql03)
 
-    # Cluster configuration
+    # Cluster configuration - Multi-Subnet
     cluster_name: SQLCLUSTER
-    cluster_ip: 192.168.100.14
+    # Multi-subnet cluster requires multiple IPs (one per subnet)
+    cluster_ips:
+      - 192.168.101.14  # SQL Subnet 1
+      - 192.168.102.14  # SQL Subnet 2
+      - 192.168.103.14  # SQL Subnet 3
 
   children:
     windows:
@@ -43,15 +51,21 @@ all:
         sql_servers:
           hosts:
             sql01:
-              ansible_host: 192.168.100.11
+              ansible_host: 192.168.101.11
+              subnet: sql1
+              subnet_cidr: 192.168.101.0/24
               sql_instance_name: MSSQLSERVER
               is_primary_replica: true
             sql02:
-              ansible_host: 192.168.100.12
+              ansible_host: 192.168.102.12
+              subnet: sql2
+              subnet_cidr: 192.168.102.0/24
               sql_instance_name: MSSQLSERVER
               is_primary_replica: false
             sql03:
-              ansible_host: 192.168.100.13
+              ansible_host: 192.168.103.13
+              subnet: sql3
+              subnet_cidr: 192.168.103.0/24
               sql_instance_name: MSSQLSERVER
               is_primary_replica: false
 
