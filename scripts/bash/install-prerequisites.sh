@@ -47,8 +47,9 @@ fi
 
 # Install Python dependencies for Ansible Windows support
 echo "[6/6] Installing Python dependencies..."
-sudo apt install -y python3-pip
-pip3 install --user pywinrm
+# Ubuntu 24.04 blocks pip system-wide installs (PEP 668)
+# Use apt packages instead
+sudo apt install -y python3-winrm python3-requests-kerberos python3-requests-ntlm
 
 # Install Terraform libvirt provider dependencies
 echo "Installing Terraform libvirt provider dependencies..."
