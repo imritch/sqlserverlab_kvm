@@ -57,9 +57,9 @@ You'll need:
    - Download from: https://www.microsoft.com/en-us/evalcenter/download-windows-server-2022
    - Save as: `isos/windows-server-2022.iso`
 
-2. **SQL Server 2022 Developer Edition** (~2GB)
+2. **SQL Server 2025 Developer Edition** (~2GB)
    - Download from: https://www.microsoft.com/en-us/sql-server/sql-server-downloads
-   - Save as: `isos/SQLServer2022-DEV-x64-ENU.iso`
+   - Save as: `isos/SQLServer2025-DEV-x64-ENU.iso`
 
 ### Step 4: Review and Customize Configuration
 

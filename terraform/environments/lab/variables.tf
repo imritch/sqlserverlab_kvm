@@ -33,9 +33,9 @@ variable "iso_path_windows" {
 }
 
 variable "iso_path_sqlserver" {
-  description = "Path to SQL Server 2022 ISO"
+  description = "Path to SQL Server 2025 ISO"
   type        = string
-  default     = "../../../isos/SQLServer2022-DEV-x64-ENU.iso"
+  default     = "../../../isos/SQLServer2025-DEV-x64-ENU.iso"
 }
 
 variable "admin_password" {

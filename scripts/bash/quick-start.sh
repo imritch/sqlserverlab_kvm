@@ -37,11 +37,11 @@ check_prerequisites() {
         echo -e "${GREEN}✓${NC} Windows Server 2022 ISO found"
     fi
 
-    if [ ! -f "$PROJECT_ROOT/isos/SQLServer2022-DEV-x64-ENU.iso" ]; then
-        echo -e "${RED}✗${NC} SQL Server 2022 ISO not found"
+    if [ ! -f "$PROJECT_ROOT/isos/SQLServer2025-DEV-x64-ENU.iso" ]; then
+        echo -e "${RED}✗${NC} SQL Server 2025 ISO not found"
         missing=1
     else
-        echo -e "${GREEN}✓${NC} SQL Server 2022 ISO found"
+        echo -e "${GREEN}✓${NC} SQL Server 2025 ISO found"
     fi
 
     if [ $missing -eq 1 ]; then

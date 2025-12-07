@@ -9,7 +9,7 @@ echo "====================================="
 echo ""
 echo "This script will help you download required ISOs:"
 echo "  1. Windows Server 2022 Evaluation (180-day trial)"
-echo "  2. SQL Server 2022 Developer Edition (Free)"
+echo "  2. SQL Server 2025 Developer Edition (Free)"
 echo ""
 
 # Windows Server 2022
@@ -38,40 +38,31 @@ else
 fi
 
 echo ""
-echo "SQL Server 2022 Developer Edition"
+echo "SQL Server 2025 Developer Edition"
 echo "----------------------------------"
 echo "Download from: https://www.microsoft.com/en-us/sql-server/sql-server-downloads"
 echo ""
-echo "Direct link:"
-echo "https://go.microsoft.com/fwlink/p/?linkid=2215158"
+echo "Note: SQL Server 2025 is the latest version."
+echo "Download the evaluation installer, then use 'Download Media' option to get the ISO."
 echo ""
-echo "Alternative: Download the installer and extract the ISO:"
-echo "  1. Download SQL Server 2022 Developer installer"
-echo "  2. Run it and choose 'Download Media'"
-echo "  3. Select 'ISO' and download location"
+echo "Manual steps:"
+echo "  1. Visit https://www.microsoft.com/en-us/sql-server/sql-server-downloads"
+echo "  2. Download SQL Server 2025 Developer Edition"
+echo "  3. Run the installer and choose 'Download Media'"
+echo "  4. Select 'ISO' format and download location"
+echo "  5. Save the ISO as: $ISO_DIR/SQLServer2025-DEV-x64-ENU.iso"
 echo ""
-echo "Or use curl to download directly:"
-echo "  cd $ISO_DIR"
-echo "  curl -L 'https://go.microsoft.com/fwlink/p/?linkid=2215158' -o SQLServer2022-DEV-x64-ENU.iso"
+echo "Expected filename: SQLServer2025-DEV-x64-ENU.iso"
 echo ""
-read -p "Download SQL Server ISO now using curl? [y/N]: " download_sql
-
-if [[ "$download_sql" =~ ^[Yy]$ ]]; then
-    echo "Downloading SQL Server 2022 Developer Edition ISO..."
-    cd "$ISO_DIR"
-    curl -L 'https://go.microsoft.com/fwlink/p/?linkid=2215158' -o SQLServer2022-DEV-x64-ENU.iso
-    echo "✓ SQL Server ISO downloaded"
-else
-    echo "Please download manually and save as: $ISO_DIR/SQLServer2022-DEV-x64-ENU.iso"
-    read -p "Press Enter when done..."
-fi
+read -p "Press Enter when you have downloaded SQL Server 2025 ISO..."
 
 # Verify SQL Server ISO
-if [ -f "$ISO_DIR/SQLServer2022-DEV-x64-ENU.iso" ]; then
-    echo "✓ Found SQL Server 2022 ISO"
-    ls -lh "$ISO_DIR/SQLServer2022-DEV-x64-ENU.iso"
+if [ -f "$ISO_DIR/SQLServer2025-DEV-x64-ENU.iso" ]; then
+    echo "✓ Found SQL Server 2025 ISO"
+    ls -lh "$ISO_DIR/SQLServer2025-DEV-x64-ENU.iso"
 else
-    echo "✗ SQL Server 2022 ISO not found at: $ISO_DIR/SQLServer2022-DEV-x64-ENU.iso"
+    echo "✗ SQL Server 2025 ISO not found at: $ISO_DIR/SQLServer2025-DEV-x64-ENU.iso"
+    echo "  Please ensure the file is named exactly: SQLServer2025-DEV-x64-ENU.iso"
 fi
 
 echo ""

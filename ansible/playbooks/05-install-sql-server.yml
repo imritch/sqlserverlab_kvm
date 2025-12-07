@@ -70,7 +70,7 @@
 
     - name: Mount SQL Server ISO
       win_disk_image:
-        image_path: \\dc01\ISOs\SQLServer2022-DEV-x64-ENU.iso
+        image_path: \\dc01\ISOs\SQLServer2025-DEV-x64-ENU.iso
         state: present
       register: disk_image_out
       when: sql_service is failed
@@ -85,7 +85,7 @@
 
     - name: Unmount SQL Server ISO
       win_disk_image:
-        image_path: \\dc01\ISOs\SQLServer2022-DEV-x64-ENU.iso
+        image_path: \\dc01\ISOs\SQLServer2025-DEV-x64-ENU.iso
         state: absent
       when: disk_image_out is defined
 
@@ -134,7 +134,7 @@
         msg: |
           SQL Server Installation Complete: {{ inventory_hostname }}
           Instance: MSSQLSERVER
-          Version: SQL Server 2022 Developer Edition
+          Version: SQL Server 2025 Developer Edition
           Service Account: {{ domain_netbios_name }}\{{ sql_service_account }}
           Always On: Enabled
           Port: 1433
