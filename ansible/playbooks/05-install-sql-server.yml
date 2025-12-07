@@ -1,10 +1,13 @@
 ---
-- name: Install SQL Server on all nodes
+# SQL Server 2025 Installation using Bootstrap Installer
+# This is the standard production-style installation using config.ini
+
+- name: Install SQL Server 2025
   hosts: sql_servers
   gather_facts: no
 
   vars:
-    sql_iso_path: "D:\\"  # Will be mounted ISO
+    sql_installer_url: "https://download.microsoft.com/download/5/1/4/5145fe04-4d30-4b85-b0d1-39533663a2f1/SQL2025-SSEI-Dev.exe"
     sql_install_path: "C:\\Program Files\\Microsoft SQL Server"
     sql_data_path: "C:\\SQLData"
     sql_log_path: "C:\\SQLLogs"
@@ -16,6 +19,18 @@
         name: MSSQLSERVER
       register: sql_service
       ignore_errors: yes
+
+    - name: Create SQL Server installation directory
+      win_file:
+        path: C:\SQLInstall
+        state: directory
+      when: sql_service is failed
+
+    - name: Download SQL Server bootstrap installer
+      win_get_url:
+        url: "{{ sql_installer_url }}"
+        dest: C:\SQLInstall\SQL2025-SSEI-Dev.exe
+      when: sql_service is failed
 
     - name: Create SQL Server configuration file
       win_copy:
@@ -59,35 +74,20 @@
           NPENABLED="1"
           BROWSERSVCSTARTUPTYPE="Automatic"
 
-          ; Always On Availability Groups
-          FAILOVERCLUSTERNETWORKNAME="{{ cluster_name }}"
-
           ; Quiet install
           QUIET="True"
           QUIETSIMPLE="False"
         dest: C:\SQLInstall\ConfigurationFile.ini
       when: sql_service is failed
 
-    - name: Mount SQL Server ISO
-      win_disk_image:
-        image_path: \\dc01\ISOs\SQLServer2025-DEV-x64-ENU.iso
-        state: present
-      register: disk_image_out
-      when: sql_service is failed
-
-    - name: Install SQL Server (this may take 20-30 minutes)
+    - name: Run SQL Server bootstrap installer to download and install
       win_shell: |
-        {{ disk_image_out.mount_paths[0] }}setup.exe /ConfigurationFile=C:\SQLInstall\ConfigurationFile.ini
-      when: sql_service is failed and disk_image_out is defined
+        # Use the bootstrap installer to download and install SQL Server
+        C:\SQLInstall\SQL2025-SSEI-Dev.exe /Action=Install /ConfigurationFile=C:\SQLInstall\ConfigurationFile.ini /IAcceptSQLServerLicenseTerms /Quiet
+      when: sql_service is failed
       async: 3600
       poll: 30
       register: sql_install
-
-    - name: Unmount SQL Server ISO
-      win_disk_image:
-        image_path: \\dc01\ISOs\SQLServer2025-DEV-x64-ENU.iso
-        state: absent
-      when: disk_image_out is defined
 
     - name: Enable Always On Availability Groups
       win_shell: |
@@ -106,29 +106,6 @@
         port: 1433
         timeout: 300
 
-    - name: Configure SQL Server for Always On
-      win_shell: |
-        $query = @"
-        -- Enable xp_cmdshell (if needed for automation)
-        EXEC sp_configure 'show advanced options', 1;
-        RECONFIGURE;
-
-        -- Set max server memory (leave 4GB for OS)
-        EXEC sp_configure 'max server memory (MB)', 8192;
-        RECONFIGURE;
-
-        -- Enable backup compression
-        EXEC sp_configure 'backup compression default', 1;
-        RECONFIGURE;
-
-        -- Set recovery interval
-        EXEC sp_configure 'recovery interval (min)', 5;
-        RECONFIGURE;
-        "@
-
-        Invoke-Sqlcmd -ServerInstance localhost -Query $query
-      ignore_errors: yes
-
     - name: Display SQL Server installation status
       debug:
         msg: |
@@ -138,3 +115,4 @@
           Service Account: {{ domain_netbios_name }}\{{ sql_service_account }}
           Always On: Enabled
           Port: 1433
+          Installation Method: Bootstrap Installer with config.ini (production-style)
