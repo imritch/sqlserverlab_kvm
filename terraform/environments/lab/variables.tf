@@ -27,9 +27,9 @@ variable "vm_storage_pool" {
 }
 
 variable "iso_path_windows" {
-  description = "Path to Windows Server 2022 ISO"
+  description = "Path to Windows Server 2022 qcow2 image"
   type        = string
-  default     = "../../../isos/windows-server-2022.iso"
+  default     = "../../images/windows-server-2022-base.qcow2"
 }
 
 variable "sql_installer_path" {

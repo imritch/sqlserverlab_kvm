@@ -4,6 +4,38 @@ Common issues and their solutions.
 
 ## Terraform Issues
 
+### Sysprep Fails with "was not able to validate your Windows installation"
+
+When creating the `.qcow2` base image, the `sysprep` command can fail with a validation error. This is commonly caused by a modern Windows App (UWP) that was updated for the logged-in user but not provisioned for all users.
+
+**Error Log:**
+
+You can diagnose which app is causing the failure by checking the log file at `C:\Windows\System32\Sysprep\Panther\setupact.log`. You are looking for an error like this:
+
+```
+2025-12-07 17:50:59, Error                 SYSPRP Package Microsoft.MicrosoftEdge.Stable_143.0.3650.66_neutral__8wekyb3d8bbwe was installed for a user, but not provisioned for all users. This package will not function properly in the sysprep image.
+2025-12-07 17:50:59, Error                 SYSPRP Failed to remove apps for the current user: 0x80073cf2.
+```
+
+**Solution:**
+
+You must remove the problematic package using PowerShell. Open PowerShell as an Administrator and run the following commands. This example is for the `Microsoft.MicrosoftEdge.Stable` package, which is a common culprit.
+
+1.  **Remove the package for the current user:**
+    ```powershell
+    Get-AppxPackage -Name Microsoft.MicrosoftEdge.Stable | Remove-AppxPackage
+    ```
+
+2.  **Remove the provisioned package for the system:**
+    ```powershell
+    Get-AppxProvisionedPackage -Online | Where-Object { $_.PackageName -like "*Microsoft.MicrosoftEdge.Stable*" } | Remove-AppxProvisionedPackage -Online
+    ```
+
+After running these commands, you can try the `sysprep` command again.
+```
+C:\Windows\System32\Sysprep\sysprep.exe /generalize /oobe /shutdown /mode:vm
+```
+
 ### Error: "libvirt provider not found"
 
 **Solution:**

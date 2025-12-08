@@ -75,6 +75,42 @@ Edit these files if needed:
 - Service account passwords (change defaults!)
 - SQL Server configuration
 
+### A Note on Terraform Provider and Base Images
+
+Before deploying the infrastructure, it's crucial to understand two key points about the Terraform setup in this project.
+
+**1. Terraform Provider:**
+
+The Terraform configuration is written for the `dmacvicar/libvirt` provider, not the official `libvirt/libvirt` provider. The syntax for defining resources, especially `libvirt_volume`, is specific to this provider. The errors related to `source` and `base_volume_id` being unsupported were due to a syntax mismatch, which has now been corrected in the `main.tf` file.
+
+**2. Windows Base Image (`.qcow2`):**
+While working with Claude on this I was trying to use the Windows Server 2022 .iso file directly to create the infra using Terraform. 
+That kept failing and eventually it got clear that I would first have to create a VM using the .iso file and create a base image.  
+Once the base image is created Terrform will create new virtual machines by cloning a "base image" or "template". 
+
+**How to Create the Windows `.qcow2` Base Image:**
+
+1.  **Use `virt-manager` to create a new VM.**
+2.  During creation, select the Windows Server 2022 `.iso` as the installation media.
+3.  When prompted for the edition, choose **Windows Server 2022 Datacenter Evaluation (Desktop Experience)**. This provides a GUI, which is much easier for managing SQL Server.
+4.  Install the OS as you normally would. After the initial installation and before running `sysprep`, it is highly recommended to install the `virtio` drivers for optimal network and disk performance.
+
+5.  **Install VirtIO Drivers:**
+    *   **Download:** Get the latest stable `virtio-win.iso` file from the official Fedora repository: [https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/stable-virtio/virtio-win.iso](https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/stable-virtio/virtio-win.iso)
+    *   **Attach ISO:** In `virt-manager`, view the VM's details and select the "SATA CDROM" device. Connect and attach the `virtio-win.iso` file you just downloaded.
+    *   **Update Drivers:** Inside the Windows VM, open **Device Manager**. You will see several devices (like "Ethernet Controller" and "PCI Device") with yellow warning icons. For each of these devices:
+        *   Right-click the device and select **Update driver**.
+        *   Choose **Browse my computer for drivers**.
+        *   Browse to the CD-ROM drive (labeled "virtio-win"), ensure **"Include subfolders"** is checked, and click **Next**. Windows will find and install the driver.
+    *   **Install Guest Agent:** From File Explorer, open the CD-ROM and run the `virtio-win-guest-tools.exe` installer to improve VM integration.
+
+6.  After installation and any other customizations (like installing Windows Updates), you must **generalize** the image using `sysprep`. This prepares it for cloning. Open a Command Prompt as an Administrator and run:
+    ```
+    C:\Windows\System32\Sysprep\sysprep.exe /generalize /oobe /shutdown /mode:vm
+    ```
+7.  The VM will shut down. **Do not start it again.** The disk file for this VM (e.g., `/var/lib/libvirt/images/windows-server-2022-base.qcow2`) is now your base image.
+8.  Update the `iso_path_windows` variable in `terraform/environments/lab/variables.tf` to point to the path of this new `.qcow2` file.
+
 ### Step 5: Deploy Infrastructure with Terraform
 
 ```bash
