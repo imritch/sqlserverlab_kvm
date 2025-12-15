@@ -18,7 +18,7 @@ resource "libvirt_network" "sql_subnet1" {
   addresses = ["192.168.101.1/24"]
 
   dns {
-    forwarder {
+    forwarders {
       address = "192.168.100.10"
     }
   }
@@ -34,7 +34,7 @@ resource "libvirt_network" "sql_subnet2" {
   addresses = ["192.168.102.1/24"]
 
   dns {
-    forwarder {
+    forwarders {
       address = "192.168.100.10"
     }
   }
@@ -50,7 +50,7 @@ resource "libvirt_network" "sql_subnet3" {
   addresses = ["192.168.103.1/24"]
 
   dns {
-    forwarder {
+    forwarders {
       address = "192.168.100.10"
     }
   }

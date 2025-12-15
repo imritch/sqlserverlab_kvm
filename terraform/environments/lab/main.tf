@@ -9,12 +9,8 @@ resource "libvirt_pool" "vm_pool" {
 resource "libvirt_volume" "windows_base" {
   name   = "windows-server-2022-base.qcow2"
   pool   = libvirt_pool.vm_pool.name
+  source = abspath(var.iso_path_windows)
   format = "qcow2"
-  create = {
-    content = {
-      url = abspath(var.iso_path_windows)
-    }
-  }
 }
 
 # Create VM volumes from base image
@@ -25,10 +21,9 @@ resource "libvirt_volume" "vm_disk" {
   pool   = libvirt_pool.vm_pool.name
   format = "qcow2"
 
-  backing_store = each.value.role != "application" ? {
-    path   = libvirt_volume.windows_base.path
-    format = "qcow2"
-  } : null
+  size = each.value.disk_size * 1024 * 1024 * 1024
+
+  base_volume_id = each.value.role != "application" ? libvirt_volume.windows_base.id : null
 }
 
 # Cloud-init / unattend.xml configuration
@@ -58,6 +53,7 @@ resource "libvirt_cloudinit_disk" "unattend" {
   for_each = { for k, v in var.vms : k => v if v.role != "application" }
 
   name      = "${each.key}-unattend.iso"
+  pool      = libvirt_pool.vm_pool.name
   user_data = data.template_file.unattend_xml[each.key].rendered
   meta_data = ""  # Required but can be empty for Windows
 }
@@ -84,7 +80,7 @@ resource "libvirt_domain" "vm" {
   dynamic "disk" {
     for_each = each.value.role != "application" ? [1] : []
     content {
-      file = "/var/lib/libvirt/images/sqlserver-lab/${each.key}-unattend.iso"
+      volume_id = libvirt_cloudinit_disk.unattend[each.key].id
     }
   }
 
@@ -96,7 +92,7 @@ resource "libvirt_domain" "vm" {
       )
     )
     hostname       = each.key
-    addresses      = [each.value.ip_.address]
+    addresses      = [each.value.ip_address]
     wait_for_lease = false
   }
 
